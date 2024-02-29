@@ -1,0 +1,40 @@
+[package]
+name = "revm-by-example"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ethers = { version = "=2.0.7", features = ["abigen", "ws"] }
+
+revm = { version = "6.1.0", features = [
+    "serde",
+    "std",
+    "optional_block_gas_limit",
+    "optional_no_base_fee",
+    "optional_balance_check",
+    "optional_eip3607",
+    "optional_gas_refund",
+] }
+
+tokio = { version = "1.35.1", features = ["full"] }
+thiserror = "1.0.37"
+sha3 = "0.10.8"
+ethabi = "18.0.0"
+anyhow = "1.0.75"
+futures = "0.3.5"
+eyre = "0.6.8"
+bigdecimal = "0.4.1"
+hashbrown = "0.14.0"
+lazy_static = "1.4.0"
+
+
+
+[[bin]]
+name = "simulate-call"
+path = "src/examples/simulate_call.rs"
+
+[[bin]]
+name = "simulate-swap"
+path = "src/examples/simulate_swap.rs"
