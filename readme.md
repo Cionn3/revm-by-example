@@ -6,7 +6,7 @@
 
 **Clone the Repository:**
 
-`git clone https://github.com/revm-by-example.git`
+`git clone https://github.com/Cionn3/revm-by-example.git`
 
 ## Usage
 
