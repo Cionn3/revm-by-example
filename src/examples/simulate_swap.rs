@@ -15,6 +15,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let client = get_client().await?;
 
     let latest_block = client.get_block_number().await?;
+    let block = client.get_block(latest_block).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
     let block_id = BlockId::Number(BlockNumber::Number(latest_block));
 
@@ -29,7 +30,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let fork_db = fork_factory.new_sandbox_fork();
 
     let balance_of_data = erc20_balanceof().encode("balanceOf", contract_address)?;
-    let mut evm = new_evm(fork_db.clone());
+    let mut evm = new_evm(fork_db.clone(), block.unwrap());
 
     // make sure the contract is funded
     let result = sim_call(

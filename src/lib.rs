@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::str::FromStr;
 use forked_db::{*, fork_factory::ForkFactory, fork_db::ForkDB};
 
-use revm::primitives::{Bytecode, Bytes as rBytes, U256 as rU256, B256, AccountInfo, TransactTo, Log};
+use revm::primitives::{Bytecode, Bytes as rBytes, Address as rAddress, U256 as rU256, B256, AccountInfo, TransactTo, Log};
 use revm::Evm;
 use bigdecimal::BigDecimal;
 use lazy_static::lazy_static;
@@ -62,9 +62,18 @@ pub async fn get_client() -> Result<Arc<Provider<Ws>>, anyhow::Error> {
 
 /// Creates a new [Evm] instance with initial state from [ForkDB]
 /// State changes are applied to [Evm]
-pub fn new_evm(fork_db: ForkDB) -> Evm<'static, (), ForkDB> {
+pub fn new_evm(fork_db: ForkDB, block: Block<H256>) -> Evm<'static, (), ForkDB> {
     let mut evm = Evm::builder().with_db(fork_db).build();
 
+    let next_block = block.number.unwrap() + 1;
+    let next_block = U256::from(next_block.as_u64());
+
+    evm.block_mut().number = to_revm_u256(next_block);
+    evm.block_mut().timestamp = to_revm_u256(block.timestamp + 12);
+    evm.block_mut().coinbase = rAddress
+        ::from_str("0xDecafC0FFEe15BAD000000000000000000000000")
+        .unwrap();
+    
     // Disable some checks for easier testing
     evm.cfg_mut().disable_balance_check = true;
     evm.cfg_mut().disable_block_gas_limit = true;

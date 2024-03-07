@@ -14,6 +14,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // setup the fork environment
     let latest_block = client.get_block_number().await?;
+    let block = client.get_block(latest_block).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
     let block_id = BlockId::Number(BlockNumber::Number(latest_block));
 
@@ -34,7 +35,7 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("Fork DB Accounts: {:?}", fork_db.db.accounts.keys());
 
     // setup a new evm instance
-    let mut evm = new_evm(fork_db.clone());
+    let mut evm = new_evm(fork_db.clone(), block.clone().unwrap());
 
     // ** Get the WETH balance of the dummy account
 
@@ -121,7 +122,7 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("Wrapped 1 ETH, New WETH Balance: {}", to_readable(balance, *WETH));
 
     // Any changes are applied to [Evm] so if we create a new evm instance even with the same fork_db we should start from a clean state
-    let mut evm = new_evm(fork_db);
+    let mut evm = new_evm(fork_db, block.unwrap());
 
     // get the weth balance again
     let result = sim_call(

@@ -38,3 +38,7 @@ path = "src/examples/simulate_call.rs"
 [[bin]]
 name = "simulate-swap"
 path = "src/examples/simulate_swap.rs"
+
+[[bin]]
+name = "simple-trace"
+path = "src/examples/simple_trace.rs"
