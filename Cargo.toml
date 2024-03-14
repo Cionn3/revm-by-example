@@ -17,6 +17,7 @@ revm = { version = "6.1.0", features = [
     "optional_eip3607",
     "optional_gas_refund",
 ] }
+revm-interpreter = { version = "=3.1" }
 
 tokio = { version = "1.35.1", features = ["full"] }
 thiserror = "1.0.37"
