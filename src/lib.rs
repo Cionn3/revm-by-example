@@ -106,7 +106,7 @@ pub fn sim_call(
     };
 
     let is_reverted = match_output_reverted(&result);
-    let logs = result.logs();
+    let logs = result.logs().to_vec();
     let gas_used = result.gas_used();
     let output = result.into_output().unwrap_or_default();
 
