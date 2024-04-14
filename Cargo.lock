@@ -2717,6 +2717,7 @@ dependencies = [
  "hashbrown",
  "lazy_static",
  "revm",
+ "serde_json",
  "sha3",
  "thiserror",
  "tokio",

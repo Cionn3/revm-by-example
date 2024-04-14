@@ -3,14 +3,11 @@ use std::str::FromStr;
 use revm_by_example::{ forked_db::fork_factory::ForkFactory, *, forked_db::bytes_to_string };
 
 use revm::db::{CacheDB, EmptyDB};
+use anyhow::ensure;
 
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-
-    let caller = Address::from_str("0x005189A5c1dc9C75ACee8D38321d5d6f8E54B1b6")?;
-    let contract_address = Address::from_str("0x0093562c7e4BcC8e4D256A27e08C9ae6Ac4F895c")?;
-
 
     let client = get_client().await?;
 
@@ -25,27 +22,13 @@ async fn main() -> Result<(), anyhow::Error> {
         Some(block_id)
     );
 
-    insert_dummy_contract_account(&mut fork_factory)?;
+    let contract_address = insert_dummy_account(AccountType::Contract, &mut fork_factory)?;
+    let caller = insert_dummy_account(AccountType::EOA, &mut fork_factory)?;
 
     let fork_db = fork_factory.new_sandbox_fork();
 
-    let balance_of_data = erc20_balanceof().encode("balanceOf", contract_address)?;
-    let mut evm = new_evm(fork_db.clone(), block.unwrap());
+    let evm = new_evm(fork_db.clone(), block.unwrap());
 
-    // make sure the contract is funded
-    let result = sim_call(
-        caller,
-        *WETH,
-        balance_of_data.clone(),
-        U256::zero(),
-        false,
-        &mut evm
-    )?;
-
-    assert!(!result.is_reverted, "BalanceOf call reverted, Reason: {:?}", bytes_to_string(result.output));
-
-    let balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
-    assert!(balance > U256::zero(), "Contract is not funded");
 
     // ** Simulate a WETH/USDC swap on Uniswap V3
     let pool = Pool {
@@ -55,62 +38,86 @@ async fn main() -> Result<(), anyhow::Error> {
         variant: PoolVariant::UniswapV3
     };
 
-    let amount_in = parse_ether(2)?;
+    let amount_in = parse_ether(1)?;
 
-    let call_data = encode_swap(
-        *WETH,
-        pool.token1,
-        amount_in,
-        pool.address,
-        pool.variant(),
-        U256::zero()
-    );
+    let swap_params = SwapParams {
+        input_token: *WETH,
+        output_token: pool.token1,
+        amount_in: amount_in,
+        pool: pool.address,
+        pool_variant: pool.variant(),
+        minimum_received: U256::zero() // no slipage
+    };
 
-    let result = sim_call(
-        caller,
-        contract_address,
-        call_data.into(),
-        U256::zero(),
-        true,
-        &mut evm
-    )?;
+    // Approve the contract to spend the WETH
+    let approve_data = encode_approve(contract_address, amount_in);
 
-    assert!(!result.is_reverted, "Swap call reverted, Reason: {:?}", bytes_to_string(result.output));
+    let mut evm_params = EvmParams {
+        caller: caller,
+        transact_to: *WETH,
+        call_data: approve_data.into(),
+        value: U256::zero(),
+        apply_changes: true,
+        evm: evm
+    };
 
-    let amount_out: U256 = swap().decode_output("swap", &result.output)?;
+    let result = sim_call(&mut evm_params)?;
+
+    ensure!(!result.is_reverted, "Approve call reverted, Reason: {:?}", bytes_to_string(result.output));
+
+    // Do the swap
+    let call_data = encode_swap(swap_params);
+
+    evm_params.transact_to = contract_address;
+    evm_params.call_data = call_data.into();
+    let result = sim_call(&mut evm_params)?;
+
+    ensure!(!result.is_reverted, "Swap call reverted, Reason: {:?}", bytes_to_string(result.output));
+
+    let ethers_bytes = Bytes::from(result.output.0);
+    let amount_out: U256 = decode_swap(ethers_bytes)?;
+    ensure!(amount_out > U256::zero(), "Amount out is zero");
     println!("Swapped {} for {}", to_readable(amount_in, *WETH), to_readable(amount_out, *USDC));
 
-    // ** Withdraw the USDC from the contract
-    let withdraw_data = encode_recover_erc20(pool.token1, amount_out);
-
-    let result = sim_call(
-        caller,
-        contract_address,
-        withdraw_data.into(),
-        U256::zero(),
-        true,
-        &mut evm
-    )?;
-
-    assert!(!result.is_reverted, "Withdraw call reverted, Reason: {:?}", bytes_to_string(result.output));
-    
+    // check callers USDC balance
     let balance_of_data = erc20_balanceof().encode("balanceOf", caller)?;
-    let result = sim_call(
-        caller,
-        pool.token1,
-        balance_of_data,
-        U256::zero(),
-        false,
-        &mut evm
-    )?;
+    evm_params.transact_to = pool.token1;
+    evm_params.call_data = balance_of_data.clone().into();
 
-    assert!(!result.is_reverted, "BalanceOf call reverted, Reason: {:?}", bytes_to_string(result.output));
+    let result = sim_call(&mut evm_params)?;
+    let caller_balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
 
-    let balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
-    assert!(balance == amount_out, "Caller's USDC balance != amount_out");
-    println!("Withdraw success!, Caller's USDC balance: {}", to_readable(balance, *USDC));
+    ensure!(caller_balance >= amount_out, "Caller didn't receive the swapped amount");
+    println!("Caller Received: {}", to_readable(caller_balance, pool.token1));
+    
+    // send the received USDC to the contract
+    let transfer_data = encode_transfer(contract_address, caller_balance);
+    evm_params.transact_to = pool.token1;
+    evm_params.call_data = transfer_data.into();
 
+    let result = sim_call(&mut evm_params)?;
 
+    ensure!(!result.is_reverted, "Transfer call reverted, Reason: {:?}", bytes_to_string(result.output));
+    println!("Transferred {} to contract", to_readable(caller_balance, pool.token1));
+
+    // withdraw the USDC from the contract
+    let withdraw_data = encode_recover_erc20(pool.token1, caller_balance);
+    evm_params.transact_to = contract_address;
+    evm_params.call_data = withdraw_data.into();
+
+    let result = sim_call(&mut evm_params)?;
+
+    ensure!(!result.is_reverted, "Withdraw call reverted, Reason: {:?}", bytes_to_string(result.output));
+
+    // check the caller USDC balance again
+    evm_params.transact_to = pool.token1;
+    evm_params.call_data = balance_of_data.into();
+
+    let result = sim_call(&mut evm_params)?;
+    let caller_balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
+
+    ensure!(caller_balance >= amount_out, "Caller USDC balance is not zero");
+    println!("Recovered {} from contract", to_readable(caller_balance, pool.token1));
 
     Ok(())
 }
