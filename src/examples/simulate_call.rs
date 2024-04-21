@@ -67,9 +67,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let value = parse_ether(1).unwrap();
     let deposit_data = weth_deposit().encode("deposit", ())?;
 
-    evm_params.caller = dummy_address;
-    evm_params.value = value;
-    evm_params.call_data = deposit_data.clone();
+    evm_params.set_caller(dummy_address);
+    evm_params.set_value(value);
+    evm_params.set_call_data(deposit_data.clone());
 
     // simulate the call without applying any state changes
     let result = sim_call(&mut evm_params)?;
@@ -77,8 +77,8 @@ async fn main() -> Result<(), anyhow::Error> {
     ensure!(!result.is_reverted, "Deposit call reverted, Reason: {:?}", bytes_to_string(result.output));
 
     // ** because we didnt apply the state changes, quering the weth balance again should return 1 weth
-    evm_params.value = U256::zero();
-    evm_params.call_data = balance_of_data.clone();
+    evm_params.set_value(U256::zero());
+    evm_params.set_call_data(balance_of_data.clone());
     let result = sim_call(&mut evm_params)?;
     
     ensure!(!result.is_reverted, "BalanceOf call reverted, Reason: {:?}", bytes_to_string(result.output));
@@ -87,16 +87,16 @@ async fn main() -> Result<(), anyhow::Error> {
     ensure!(balance == parse_ether(1).unwrap(), "Balance is not 1 WETH: {}", balance);
 
     // ** sim again the deposit applying the state changes
-    evm_params.value = value;
-    evm_params.call_data = deposit_data.clone();
-    evm_params.apply_changes = true;
+    evm_params.set_value(value);
+    evm_params.set_call_data(deposit_data.clone());
+    evm_params.set_apply_changes(true);
     let result = sim_call(&mut evm_params)?;
 
     ensure!(!result.is_reverted, "Deposit call reverted, Reason: {:?}", bytes_to_string(result.output));
 
     // ** get the weth balance again
-    evm_params.value = U256::zero();
-    evm_params.call_data = balance_of_data.clone();
+    evm_params.set_value(U256::zero());
+    evm_params.set_call_data(balance_of_data.clone());
     let result = sim_call(&mut evm_params)?;
 
 
@@ -110,7 +110,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let evm = new_evm(fork_db, block.unwrap());
 
     // get the weth balance again
-    evm_params.evm = evm;
+    evm_params.set_evm(evm);
     let result = sim_call(&mut evm_params)?;
 
     let balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;

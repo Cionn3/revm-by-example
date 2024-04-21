@@ -88,6 +88,36 @@ impl EvmParams {
         self.evm.tx_mut().data = rBytes::from(self.call_data.clone().0);
         self.evm.tx_mut().value = to_revm_u256(self.value);
     }
+
+    /// Sets the `caller` of the transaction
+    pub fn set_caller(&mut self, caller: Address) {
+        self.caller = caller;
+    }
+
+    /// Sets the `transact_to` address
+    pub fn set_transact_to(&mut self, transact_to: Address) {
+        self.transact_to = transact_to;
+    }
+
+    /// Sets the `call_data`
+    pub fn set_call_data(&mut self, call_data: Bytes) {
+        self.call_data = call_data;
+    }
+
+    /// Sets the `value` of the transaction
+    pub fn set_value(&mut self, value: U256) {
+        self.value = value;
+    }
+
+    /// Sets whether to apply the changes or not
+    pub fn set_apply_changes(&mut self, apply_changes: bool) {
+        self.apply_changes = apply_changes;
+    }
+
+    /// Sets the [Evm] instance
+    pub fn set_evm(&mut self, evm: Evm<'static, (), ForkDB>) {
+        self.evm = evm;
+    }
 }
 
 /// Struct that holds the result of a simulation

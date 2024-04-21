@@ -68,8 +68,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // Do the swap
     let call_data = encode_swap(swap_params);
 
-    evm_params.transact_to = contract_address;
-    evm_params.call_data = call_data.into();
+    evm_params.set_transact_to(contract_address);
+    evm_params.set_call_data(call_data.into());
     let result = sim_call(&mut evm_params)?;
 
     ensure!(!result.is_reverted, "Swap call reverted, Reason: {:?}", bytes_to_string(result.output));
@@ -81,8 +81,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // check callers USDC balance
     let balance_of_data = erc20_balanceof().encode("balanceOf", caller)?;
-    evm_params.transact_to = pool.token1;
-    evm_params.call_data = balance_of_data.clone().into();
+    evm_params.set_transact_to(pool.token1);
+    evm_params.set_call_data(balance_of_data.clone().into());
 
     let result = sim_call(&mut evm_params)?;
     let caller_balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
@@ -92,8 +92,8 @@ async fn main() -> Result<(), anyhow::Error> {
     
     // send the received USDC to the contract
     let transfer_data = encode_transfer(contract_address, caller_balance);
-    evm_params.transact_to = pool.token1;
-    evm_params.call_data = transfer_data.into();
+    evm_params.set_transact_to(pool.token1);
+    evm_params.set_call_data(transfer_data.into());
 
     let result = sim_call(&mut evm_params)?;
 
@@ -102,16 +102,16 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // withdraw the USDC from the contract
     let withdraw_data = encode_recover_erc20(pool.token1, caller_balance);
-    evm_params.transact_to = contract_address;
-    evm_params.call_data = withdraw_data.into();
+    evm_params.set_transact_to(contract_address);
+    evm_params.set_call_data(withdraw_data.into());
 
     let result = sim_call(&mut evm_params)?;
 
     ensure!(!result.is_reverted, "Withdraw call reverted, Reason: {:?}", bytes_to_string(result.output));
 
     // check the caller USDC balance again
-    evm_params.transact_to = pool.token1;
-    evm_params.call_data = balance_of_data.into();
+    evm_params.set_transact_to(pool.token1);
+    evm_params.set_call_data(balance_of_data.into());
 
     let result = sim_call(&mut evm_params)?;
     let caller_balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
