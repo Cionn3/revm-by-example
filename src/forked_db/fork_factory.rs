@@ -6,8 +6,10 @@ use super::{
     fork_db::ForkDB,
     global_backend::{BackendFetchRequest, GlobalBackend},
 };
-use ethers::prelude::*;
-use ethers::types::BlockId;
+use alloy::rpc::types::eth::BlockId;
+use alloy::providers::RootProvider;
+use alloy::pubsub::PubSubFrontend;
+
 use futures::channel::mpsc::{channel, Sender};
 use revm::{
     db::{CacheDB, EmptyDB},
@@ -34,7 +36,7 @@ impl ForkFactory {
     // Returns:
     // `(ForkFactory, GlobalBackend)`: ForkFactory instance and the GlobalBackend it talks to
     fn new(
-        provider: Arc<Provider<Ws>>,
+        provider: Arc<RootProvider<PubSubFrontend>>,
         initial_db: CacheDB<EmptyDB>,
         fork_block: Option<BlockId>,
     ) -> (Self, GlobalBackend) {
@@ -62,7 +64,7 @@ impl ForkFactory {
 
     // Create a new sandbox environment with backend running on own thread
     pub fn new_sandbox_factory(
-        provider: Arc<Provider<Ws>>,
+        provider: Arc<RootProvider<PubSubFrontend>>,
         initial_db: CacheDB<EmptyDB>,
         fork_block: Option<BlockId>,
     ) -> Self {

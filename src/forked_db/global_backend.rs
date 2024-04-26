@@ -1,44 +1,35 @@
 // credit to Foundry's SharedBackend implmenetation:
 // https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/fork/backend.rs
-use ethers::{
-    providers::{Middleware, Provider, ProviderError, Ws},
-    types::{Address, BigEndianHash, BlockId, H256},
-    utils::keccak256,
-};
-use eyre::Result;
-use futures::{
-    channel::mpsc::Receiver,
-    task::{Context, Poll},
-    Future, FutureExt, Stream,
-};
-use hashbrown::{hash_map::Entry, HashMap};
-use revm::{
-    db::{CacheDB, EmptyDB},
-    primitives::{
-        AccountInfo, Bytecode, Bytes as rBytes, Address as rAddress, B256, KECCAK_EMPTY,
-        U256 as rU256,
-    },
-};
-use std::{
-    collections::VecDeque,
-    pin::Pin,
-    sync::{mpsc::Sender as OneshotSender, Arc},
-};
 
-use super::database_error::{DatabaseError, DatabaseResult};
+use alloy::rpc::types::eth::BlockId;
+use alloy::providers::{RootProvider, Provider};
+
+use alloy::pubsub::PubSubFrontend;
+use alloy::transports::{RpcError, TransportErrorKind};
+use alloy::primitives::{ Address, U256, Bytes };
+
+use eyre::Result;
+use futures::{ channel::mpsc::Receiver, task::{ Context, Poll }, Future, FutureExt, Stream };
+use hashbrown::{ hash_map::Entry, HashMap };
+use revm::{ db::{ CacheDB, EmptyDB }, primitives::{ AccountInfo, Bytecode, B256, KECCAK_EMPTY } };
+use std::{ collections::VecDeque, pin::Pin, sync::{ mpsc::Sender as OneshotSender, Arc } };
+
+use super::database_error::{ DatabaseError, DatabaseResult };
 use super::*;
 
 // **incoming req and outcoming req handled using revm types
 // all logic internal to this module handled using ethers types (because of provider)
 type AccountInfoSender = OneshotSender<DatabaseResult<AccountInfo>>;
-type StorageSender = OneshotSender<DatabaseResult<rU256>>;
+type StorageSender = OneshotSender<DatabaseResult<U256>>;
 type BlockHashSender = OneshotSender<DatabaseResult<B256>>;
 
-type BasicFuture<Err> =
-    Pin<Box<dyn Future<Output = (Result<(rU256, u64, rBytes), Err>, rAddress)> + Send>>;
-type StorageFuture<Err> =
-    Pin<Box<dyn Future<Output = (Result<rU256, Err>, rAddress, rU256)> + Send>>;
-type BlockHashFuture<Err> = Pin<Box<dyn Future<Output = (Result<B256, Err>, rU256)> + Send>>;
+type BasicFuture<Err> = Pin<
+    Box<dyn Future<Output = (Result<(U256, u64, Bytes), Err>, Address)> + Send>
+>;
+type StorageFuture<Err> = Pin<
+    Box<dyn Future<Output = (Result<U256, Err>, Address, U256)> + Send>
+>;
+type BlockHashFuture<Err> = Pin<Box<dyn Future<Output = (Result<B256, Err>, U256)> + Send>>;
 
 /// Request variants that are executed by the provider
 enum FetchRequestFuture<Err> {
@@ -51,11 +42,11 @@ enum FetchRequestFuture<Err> {
 #[derive(Debug)]
 pub enum BackendFetchRequest {
     /// Fetch the account info
-    Basic(rAddress, AccountInfoSender),
+    Basic(Address, AccountInfoSender),
     /// Fetch a storage slot
-    Storage(rAddress, rU256, StorageSender),
+    Storage(Address, U256, StorageSender),
     /// Fetch a block hash
-    BlockHash(rU256, BlockHashSender),
+    BlockHash(U256, BlockHashSender),
 }
 
 /// Holds db and provdier_db to fallback on so that
@@ -63,16 +54,16 @@ pub enum BackendFetchRequest {
 pub struct GlobalBackend {
     db: CacheDB<EmptyDB>,
     // used to make calls for missing data
-    provider: Arc<Provider<Ws>>,
+    provider: Arc<RootProvider<PubSubFrontend>>,
     block_num: Option<BlockId>,
     /// Requests currently in progress
-    pending_requests: Vec<FetchRequestFuture<ProviderError>>,
+    pending_requests: Vec<FetchRequestFuture<RpcError<TransportErrorKind>>>,
     /// Listeners that wait for a `get_account` related response
-    account_requests: HashMap<rAddress, Vec<AccountInfoSender>>,
+    account_requests: HashMap<Address, Vec<AccountInfoSender>>,
     /// Listeners that wait for a `get_storage_at` response
-    storage_requests: HashMap<(rAddress, rU256), Vec<StorageSender>>,
+    storage_requests: HashMap<(Address, U256), Vec<StorageSender>>,
     /// Listeners that wait for a `get_block` response
-    block_requests: HashMap<rU256, Vec<BlockHashSender>>,
+    block_requests: HashMap<U256, Vec<BlockHashSender>>,
     /// Incoming commands.
     incoming: Receiver<BackendFetchRequest>,
     /// unprocessed queued requests
@@ -84,8 +75,8 @@ impl GlobalBackend {
     pub fn new(
         rx: Receiver<BackendFetchRequest>,
         block_num: Option<BlockId>,
-        provider: Arc<Provider<Ws>>,
-        initial_db: CacheDB<EmptyDB>,
+        provider: Arc<RootProvider<PubSubFrontend>>,
+        initial_db: CacheDB<EmptyDB>
     ) -> Self {
         Self {
             db: initial_db,
@@ -117,11 +108,7 @@ impl GlobalBackend {
                 }
             }
             BackendFetchRequest::Storage(addr, idx, sender) => {
-                let value = self
-                    .db
-                    .accounts
-                    .get(&addr)
-                    .and_then(|acc| acc.storage.get(&idx));
+                let value = self.db.accounts.get(&addr).and_then(|acc| acc.storage.get(&idx));
                 if let Some(value) = value {
                     let _ = sender.send(Ok(*value));
                 } else {
@@ -141,7 +128,7 @@ impl GlobalBackend {
     }
 
     /// process a request for an account
-    fn request_account(&mut self, address: rAddress, listener: AccountInfoSender) {
+    fn request_account(&mut self, address: Address, listener: AccountInfoSender) {
         match self.account_requests.entry(address) {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().push(listener);
@@ -149,21 +136,15 @@ impl GlobalBackend {
             Entry::Vacant(entry) => {
                 entry.insert(vec![listener]);
                 let provider = self.provider.clone();
-                let block_num = self.block_num;
+                let block_num = self.block_num.unwrap();
                 let fut = Box::pin(async move {
-                    // convert from revm to ethers
-                    let address_ethers: Address = to_ethers_address(address);
 
-                    let balance = provider.get_balance(address_ethers, block_num);
-                    let nonce = provider.get_transaction_count(address_ethers, block_num);
-                    let code = provider.get_code(address_ethers, block_num);
+                    let balance = provider.get_balance(address, block_num);
+                    let nonce = provider.get_transaction_count(address, block_num);
+                    let code = provider.get_code_at(address, block_num);
                     let resp = tokio::try_join!(balance, nonce, code);
 
-                    let resp = resp.map(|(b, n, c)| (
-                        to_revm_u256(b),
-                        n.as_u64(),
-                        rBytes::from(c.0),
-                    ));
+                   
                     (resp, address)
                 });
                 self.pending_requests.push(FetchRequestFuture::Basic(fut));
@@ -172,7 +153,7 @@ impl GlobalBackend {
     }
 
     // Process a request for account's storage
-    fn request_account_storage(&mut self, address: rAddress, idx: rU256, listener: StorageSender) {
+    fn request_account_storage(&mut self, address: Address, idx: U256, listener: StorageSender) {
         match self.storage_requests.entry((address, idx)) {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().push(listener);
@@ -182,18 +163,14 @@ impl GlobalBackend {
                 let provider = self.provider.clone();
                 let block_num = self.block_num;
                 let fut = Box::pin(async move {
-                    // convert from revm to ethers type
-                    let idx_ethers = H256::from_uint(&to_ethers_u256(idx));
-                    let address_ethers: Address = to_ethers_address(address);
 
-                    let storage = provider
-                        .get_storage_at(address_ethers, idx_ethers, block_num)
-                        .await;
-                    let storage = storage.map(|storage| storage.into_uint());
+                    let storage = provider.get_storage_at(
+                        address,
+                        idx,
+                        block_num.unwrap()
+                    ).await;
 
-                    // convert ethers types to revm types
-                    let storage = storage.map(|s| to_revm_u256(s));
-                    // convert back to revm types
+
                     (storage, address, idx)
                 });
                 self.pending_requests.push(FetchRequestFuture::Storage(fut));
@@ -202,7 +179,7 @@ impl GlobalBackend {
     }
 
     // Process a request for a block hash
-    fn request_hash(&mut self, number: rU256, listener: BlockHashSender) {
+    fn request_hash(&mut self, number: U256, listener: BlockHashSender) {
         match self.block_requests.entry(number) {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().push(listener);
@@ -210,15 +187,18 @@ impl GlobalBackend {
             Entry::Vacant(entry) => {
                 entry.insert(vec![listener]);
                 let provider = self.provider.clone();
+                let block_id = self.block_num.unwrap();
+
                 let fut = Box::pin(async move {
-                    // convert from revm to ethers type
-                    let number_ethers: u64 = to_ethers_u256(number).as_u64();
-                    let block = provider.get_block(number_ethers).await;
+                    let block = provider.get_block(block_id, true).await;
 
                     let block_hash = match block {
-                        Ok(Some(block)) => Ok(block
-                            .hash
-                            .expect("empty block hash on mined block, this should never happen")),
+                        Ok(Some(block)) =>
+                            Ok(
+                                block.header.hash.expect(
+                                    "empty block hash on mined block, this should never happen"
+                                )
+                            ),
                         Ok(None) => {
                             // if no block was returned then the block does not exist, in which case
                             // we return empty hash
@@ -227,12 +207,9 @@ impl GlobalBackend {
                         Err(err) => Err(err),
                     };
 
-                    // convert from ethers to revm type before returning
-                    let revm_block_hash = block_hash.map(|bh| bh.0.into());
-                    (revm_block_hash, number)
+                    (block_hash, number)
                 });
-                self.pending_requests
-                    .push(FetchRequestFuture::BlockHash(fut));
+                self.pending_requests.push(FetchRequestFuture::BlockHash(fut));
             }
         }
     }
@@ -246,7 +223,7 @@ impl Future for GlobalBackend {
         loop {
             // Drain queued requests first.
             while let Some(req) = pin.queued_requests.pop_front() {
-                pin.on_request(req)
+                pin.on_request(req);
             }
 
             // receive new requests to delegate to the underlying provider
@@ -258,7 +235,9 @@ impl Future for GlobalBackend {
                     Poll::Ready(None) => {
                         return Poll::Ready(());
                     }
-                    Poll::Pending => break,
+                    Poll::Pending => {
+                        break;
+                    }
                 }
             }
 
@@ -275,11 +254,15 @@ impl Future for GlobalBackend {
                                     let err = Arc::new(eyre::Error::new(err));
                                     if let Some(listeners) = pin.account_requests.remove(&addr) {
                                         listeners.into_iter().for_each(|l| {
-                                            let _ = l.send(Err(DatabaseError::GetAccount(
-                                                addr,
-                                                Arc::clone(&err),
-                                            )));
-                                        })
+                                            let _ = l.send(
+                                                Err(
+                                                    DatabaseError::GetAccount(
+                                                        addr,
+                                                        Arc::clone(&err)
+                                                    )
+                                                )
+                                            );
+                                        });
                                     }
                                     continue;
                                 }
@@ -305,7 +288,7 @@ impl Future for GlobalBackend {
                             if let Some(listeners) = pin.account_requests.remove(&addr) {
                                 listeners.into_iter().for_each(|l| {
                                     let _ = l.send(Ok(acc.clone()));
-                                })
+                                });
                             }
                             continue;
                         }
@@ -317,16 +300,22 @@ impl Future for GlobalBackend {
                                 Err(err) => {
                                     // notify all listeners
                                     let err = Arc::new(eyre::Error::new(err));
-                                    if let Some(listeners) =
-                                        pin.storage_requests.remove(&(addr, idx))
+                                    if
+                                        let Some(listeners) = pin.storage_requests.remove(
+                                            &(addr, idx)
+                                        )
                                     {
                                         listeners.into_iter().for_each(|l| {
-                                            let _ = l.send(Err(DatabaseError::GetStorage(
-                                                addr,
-                                                idx,
-                                                Arc::clone(&err),
-                                            )));
-                                        })
+                                            let _ = l.send(
+                                                Err(
+                                                    DatabaseError::GetStorage(
+                                                        addr,
+                                                        idx,
+                                                        Arc::clone(&err)
+                                                    )
+                                                )
+                                            );
+                                        });
                                     }
                                     continue;
                                 }
@@ -339,7 +328,7 @@ impl Future for GlobalBackend {
                             if let Some(listeners) = pin.storage_requests.remove(&(addr, idx)) {
                                 listeners.into_iter().for_each(|l| {
                                     let _ = l.send(Ok(value));
-                                })
+                                });
                             }
                             continue;
                         }
@@ -353,11 +342,15 @@ impl Future for GlobalBackend {
                                     // notify all listeners
                                     if let Some(listeners) = pin.block_requests.remove(&number) {
                                         listeners.into_iter().for_each(|l| {
-                                            let _ = l.send(Err(DatabaseError::GetBlockHash(
-                                                number,
-                                                Arc::clone(&err),
-                                            )));
-                                        })
+                                            let _ = l.send(
+                                                Err(
+                                                    DatabaseError::GetBlockHash(
+                                                        number,
+                                                        Arc::clone(&err)
+                                                    )
+                                                )
+                                            );
+                                        });
                                     }
                                     continue;
                                 }
@@ -370,7 +363,7 @@ impl Future for GlobalBackend {
                             if let Some(listeners) = pin.block_requests.remove(&number) {
                                 listeners.into_iter().for_each(|l| {
                                     let _ = l.send(Ok(value.0.into()));
-                                })
+                                });
                             }
                             continue;
                         }

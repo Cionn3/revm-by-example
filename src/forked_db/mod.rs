@@ -8,7 +8,7 @@ pub mod fork_factory;
 
 use revm::primitives::{ExecutionResult, Output, Bytes};
 use anyhow::anyhow;
-
+use tiny_keccak::{Keccak, Hasher};
 
 
 
@@ -61,38 +61,12 @@ pub fn match_output_reverted(result: &ExecutionResult) -> bool {
 
 
 
-// ** Convert Types from Ethers To Revm Primitive Types **
-
-// Converts from Ethers U256 to revm::primitives::U256
-pub fn to_revm_u256(u: ethers::types::U256) -> revm::primitives::U256 {
-    let mut bytes = [0u8; 32];
-    u.to_little_endian(&mut bytes);
-    revm::primitives::U256::from_le_bytes(bytes)
-}
-
-// Converts from revm primitive U256 to ethers U256
-pub fn to_ethers_u256(u: revm::primitives::U256) -> ethers::types::U256 {
-    let bytes: [u8; 32] = u.to_be_bytes(); // Explicitly specifying the size of the byte array
-    ethers::types::U256::from_big_endian(&bytes)
-}
-
-// converts from revm primitive Address to ethers Address
-pub fn to_ethers_address(address: revm::primitives::Address) -> ethers::types::Address {
-    let bytes: [u8; 20] = address.0.into();
-    ethers::types::H160::from(bytes)
-}
-
-// converts from ethers U256 to ethers H256
-pub fn h256_from_u256(u: ethers::types::U256) -> ethers::types::H256 {
-    let mut bytes = [0u8; 32];
-    u.to_little_endian(&mut bytes);
-    ethers::types::H256::from_slice(&bytes)
-}
-
-// converts from Ethers Address to revm primitive Address
-pub fn to_revm_address(address: ethers::types::Address) -> revm::primitives::Address {
-    let bytes: [u8; 20] = address.0;
-    revm::primitives::Address::from(bytes)
+pub fn keccak256(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Keccak::v256();
+    let mut result = [0u8; 32];
+    hasher.update(data);
+    hasher.finalize(&mut result);
+    result
 }
 
 // converts from revm B256 hash to revm Address

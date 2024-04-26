@@ -1,6 +1,7 @@
-use ethers::{prelude::*, utils::parse_ether};
-use std::str::FromStr;
-use revm_by_example::{ forked_db::fork_factory::ForkFactory, *, forked_db::bytes_to_string };
+use alloy::providers::Provider;
+use alloy::rpc::types::eth::{BlockId, BlockNumberOrTag};
+use alloy::primitives::{Address, U256};use std::str::FromStr;
+use revm_by_example::{ forked_db::fork_factory::ForkFactory, *, forked_db::bytes_to_string, parse_ether };
 
 use revm::db::{CacheDB, EmptyDB};
 use anyhow::ensure;
@@ -12,9 +13,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let client = get_client().await?;
 
     let latest_block = client.get_block_number().await?;
-    let block = client.get_block(latest_block).await?;
+    let block_id = BlockId::Number(BlockNumberOrTag::Number(latest_block));
+    let block = client.get_block(block_id.clone(), true).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
-    let block_id = BlockId::Number(BlockNumber::Number(latest_block));
 
     let mut fork_factory = ForkFactory::new_sandbox_factory(
         client.clone(),
@@ -38,7 +39,7 @@ async fn main() -> Result<(), anyhow::Error> {
         variant: PoolVariant::UniswapV3
     };
 
-    let amount_in = parse_ether(1)?;
+    let amount_in = parse_ether("1")?;
 
     let swap_params = SwapParams {
         input_token: *WETH,
@@ -46,7 +47,7 @@ async fn main() -> Result<(), anyhow::Error> {
         amount_in: amount_in,
         pool: pool.address,
         pool_variant: pool.variant(),
-        minimum_received: U256::zero() // no slipage
+        minimum_received: U256::ZERO // no slipage
     };
 
     // Approve the contract to spend the WETH
@@ -56,7 +57,7 @@ async fn main() -> Result<(), anyhow::Error> {
         caller: caller,
         transact_to: *WETH,
         call_data: approve_data.into(),
-        value: U256::zero(),
+        value: U256::ZERO,
         apply_changes: true,
         evm: evm
     };
@@ -74,18 +75,17 @@ async fn main() -> Result<(), anyhow::Error> {
 
     ensure!(!result.is_reverted, "Swap call reverted, Reason: {:?}", bytes_to_string(result.output));
 
-    let ethers_bytes = Bytes::from(result.output.0);
-    let amount_out: U256 = decode_swap(ethers_bytes)?;
-    ensure!(amount_out > U256::zero(), "Amount out is zero");
+    let amount_out: U256 = decode_swap(result.output)?;
+    ensure!(amount_out > U256::ZERO, "Amount out is zero");
     println!("Swapped {} for {}", to_readable(amount_in, *WETH), to_readable(amount_out, *USDC));
 
     // check callers USDC balance
-    let balance_of_data = erc20_balanceof().encode("balanceOf", caller)?;
+    let balance_of_data = encode_balanceof(caller);
     evm_params.set_transact_to(pool.token1);
     evm_params.set_call_data(balance_of_data.clone().into());
 
     let result = sim_call(&mut evm_params)?;
-    let caller_balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
+    let caller_balance: U256 = decode_balanceof(result.output)?;
 
     ensure!(caller_balance >= amount_out, "Caller didn't receive the swapped amount");
     println!("Caller Received: {}", to_readable(caller_balance, pool.token1));
@@ -114,7 +114,7 @@ async fn main() -> Result<(), anyhow::Error> {
     evm_params.set_call_data(balance_of_data.into());
 
     let result = sim_call(&mut evm_params)?;
-    let caller_balance: U256 = erc20_balanceof().decode_output("balanceOf", &result.output)?;
+    let caller_balance: U256 = decode_balanceof(result.output)?;
 
     ensure!(caller_balance >= amount_out, "Caller USDC balance is not zero");
     println!("Recovered {} from contract", to_readable(caller_balance, pool.token1));

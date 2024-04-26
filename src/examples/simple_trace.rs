@@ -1,8 +1,10 @@
-use ethers::prelude::*;
+use alloy::rpc::types::eth::{BlockId, BlockNumberOrTag};
+use alloy::primitives::{Address, U256};
+use alloy::providers::Provider;
 use std::str::FromStr;
 
 use revm_by_example::{
-    forked_db::{ fork_factory::ForkFactory, to_revm_u256, to_ethers_address },
+    forked_db::fork_factory::ForkFactory,
     *,
 };
 
@@ -14,9 +16,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let client = get_client().await?;
 
     let latest_block = client.get_block_number().await?;
-    let block = client.get_block(latest_block).await?;
+    let block_id = BlockId::Number(BlockNumberOrTag::Number(latest_block));
+    let block = client.get_block(block_id, true).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
-    let block_id = BlockId::Number(BlockNumber::Number(latest_block));
 
     let mut mempool_stream = if let Ok(stream) = client.subscribe_full_pending_txs().await {
         stream
