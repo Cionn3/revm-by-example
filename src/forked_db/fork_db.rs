@@ -89,15 +89,6 @@ impl Database for ForkDB {
             }
         }
 
-        // get account info
-        let acc_info = match self.do_get_basic(address) {
-            Ok(a) => a,
-            Err(e) => return Err(e),
-        };
-
-        if let Some(a) = acc_info {
-            self.db.insert_account_info(address, a);
-        }
 
         // make rpc call to fetch storage
         let storage_val = match self.do_get_storage(address, index) {

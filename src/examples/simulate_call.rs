@@ -1,8 +1,7 @@
 use alloy::providers::Provider;
 use alloy::rpc::types::eth::{BlockId, BlockNumberOrTag};
-use alloy::primitives::{Address, U256};
-use revm_by_example::forked_db::bytes_to_string;
-use revm_by_example::{ forked_db::fork_factory::ForkFactory, *, parse_ether };
+use alloy::primitives::U256;
+use revm_by_example::{ forked_db::fork_factory::ForkFactory, *, utils::* };
 
 use revm::db::{ CacheDB, EmptyDB };
 use anyhow::ensure;
@@ -12,8 +11,7 @@ use anyhow::ensure;
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let client = get_client().await?;
-    let one_eth = parse_ether("1")?;
-    println!("1 ETH in Wei: {}", one_eth);
+
 
     // setup the fork environment
     let latest_block = client.get_block_number().await?;
@@ -28,7 +26,9 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
     // insert a dummy EOA account for easier testing with a balance of 1 ETH and 1 WETH
-    let dummy_address = insert_dummy_account(AccountType::EOA, &mut fork_factory)?;
+    let one_eth = parse_ether("1")?;
+    let dummy_account = DummyAccount::new(AccountType::EOA, one_eth, one_eth);
+    insert_dummy_account(&dummy_account, &mut fork_factory)?;
 
     // create a new fork db
     let fork_db = fork_factory.new_sandbox_fork();
@@ -39,90 +39,75 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // setup a new evm instance
     let evm = new_evm(fork_db.clone(), block.clone().unwrap());
+    let weth = ERC20Token::new(*WETH, client.clone()).await?;
 
     // ** Get the WETH balance of the dummy account
 
-    // call data
-    let balance_of_data = encode_balanceof(dummy_address);
 
     let mut evm_params = EvmParams {
-        caller: Address::ZERO, // <- caller here can be zero since doesn't matter for this call
-        transact_to: *WETH, // <- the contract address we interact with
-        call_data: balance_of_data.clone().into(),
-        value: U256::ZERO, // <- ETH to send with the transaction
-        apply_changes: false, // <- whether to apply the state changes or not
+        caller: dummy_account.address.clone(),
+        transact_to: *WETH,
+        call_data: weth.encode_balance_of(dummy_account.address).into(),
+        value: U256::ZERO,
         evm: evm
     };
 
-    let result = sim_call(&mut evm_params)?;
+    evm_params.set_tx_env();
+    let res = evm_params.evm.transact()?;
+    let output = res.result.output().unwrap_or_default();
 
     // make sure the call is not reverted
-    ensure!(!result.is_reverted, "BalanceOf call reverted, Reason: {:?}", bytes_to_string(result.output));
+    ensure!(res.result.is_success(), "BalanceOf call reverted, Reason: {:?}", revert_msg(output));
 
     // decode the output evm returned to get the balance, should be 1 WETH
-    let balance: U256 = decode_balanceof(result.output)?;
-    ensure!(balance == parse_ether("1").unwrap(), "Balance is not 1 WETH: {}", balance);
-    println!("Account Initial WETH Balance: {}", to_readable(balance, *WETH));
+    let balance: U256 = weth.decode_balance_of(output)?;
+    ensure!(balance == one_eth, "Balance is not 1 WETH: {}", balance);
+    println!("Account Initial WETH Balance: {}", to_readable(balance, weth.clone()));
 
     // ** wrap 1 ETH to WETH by interacting with the WETH contract
     // ** To do this we need to call the deposit function of the WETH contract
     // ** And send 1 ETH to it
 
-    let value = parse_ether("1")?;
-    let deposit_data = weth_deposit();
 
-    evm_params.set_caller(dummy_address);
-    evm_params.set_value(value);
-    evm_params.set_call_data(deposit_data.clone().into());
+    evm_params.set_value(one_eth);
+    evm_params.set_call_data(weth.encode_deposit().into());
+    evm_params.set_tx_env();
 
-    // simulate the call without applying any state changes
-    let result = sim_call(&mut evm_params)?;
+    // simulate the call, transact_commit will apply the state changes
+    let res = evm_params.evm.transact_commit()?;
+    let output = res.output().unwrap_or_default();
 
-    ensure!(!result.is_reverted, "Deposit call reverted, Reason: {:?}", bytes_to_string(result.output));
+    ensure!(res.is_success(), "Deposit call reverted, Reason: {:?}", revert_msg(output));
 
-    // ** because we didnt apply the state changes, quering the weth balance again should return 1 weth
-    evm_params.set_value(U256::ZERO);
-    evm_params.set_call_data(balance_of_data.clone().into());
-    let result = sim_call(&mut evm_params)?;
-    
-    ensure!(!result.is_reverted, "BalanceOf call reverted, Reason: {:?}", bytes_to_string(result.output));
-
-    let balance: U256 = decode_balanceof(result.output)?;
-    ensure!(balance == parse_ether("1").unwrap(), "Balance is not 1 WETH: {}", balance);
-
-    // ** sim again the deposit applying the state changes
-    evm_params.set_value(value);
-    evm_params.set_call_data(deposit_data.clone().into());
-    evm_params.set_apply_changes(true);
-    let result = sim_call(&mut evm_params)?;
-
-    ensure!(!result.is_reverted, "Deposit call reverted, Reason: {:?}", bytes_to_string(result.output));
 
     // ** get the weth balance again
     evm_params.set_value(U256::ZERO);
-    evm_params.set_call_data(balance_of_data.clone().into());
-    let result = sim_call(&mut evm_params)?;
+    evm_params.set_call_data(weth.encode_balance_of(dummy_account.address).into());
+    evm_params.set_tx_env();
+
+    let res = evm_params.evm.transact()?;
+    let output = res.result.output().unwrap_or_default();
 
 
-    let balance: U256 = decode_balanceof(result.output)?;
+    let balance: U256 = weth.decode_balance_of(output)?;
+    ensure!(balance == parse_ether("2").unwrap(), "Balance should be 2 WETH: {}", balance);
     
-
-    // now the balance should be 2 WETH
-    ensure!(balance == parse_ether("2").unwrap(), "Balance is not 2 WETH: {}", balance);
-    println!("Wrapped 1 ETH, New WETH Balance: {}", to_readable(balance, *WETH));
+    println!("Wrapped 1 ETH, New WETH Balance: {}", to_readable(balance, weth.clone()));
 
     // Any changes are applied to [Evm] so if we create a new evm instance even with the same fork_db we should start from a clean state
     let evm = new_evm(fork_db, block.unwrap());
 
     // get the weth balance again
     evm_params.set_evm(evm);
-    let result = sim_call(&mut evm_params)?;
+    evm_params.set_tx_env();
+    
+    let res = evm_params.evm.transact()?;
+    let output = res.result.output().unwrap_or_default();
 
-    let balance: U256 = decode_balanceof(result.output)?;
+    let balance: U256 = weth.decode_balance_of(output)?;
+    ensure!(balance == one_eth, "Balance should be 1 WETH: {}", balance);
     
-    
-    ensure!(balance == parse_ether("1").unwrap(), "Balance is not 1 WETH: {}", balance);
-    println!("Account WETH Balance After New EVM: {}", to_readable(balance, *WETH));
+    println!("Account WETH Balance After New EVM: {}", to_readable(balance, weth));
 
 
     Ok(())

@@ -1,7 +1,9 @@
 use alloy::rpc::types::eth::{BlockId, BlockNumberOrTag};
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
+use futures::FutureExt;
 use std::str::FromStr;
+use futures_util::{stream, StreamExt};
 
 use revm_by_example::{
     forked_db::fork_factory::ForkFactory,
@@ -20,11 +22,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let block = client.get_block(block_id, true).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
 
-    let mut mempool_stream = if let Ok(stream) = client.subscribe_full_pending_txs().await {
-        stream
-    } else {
-        return Err(anyhow::anyhow!("Failed to subscribe to pending transactions"));
-    };
+    let mut mempool_stream = client.subscribe_full_pending_transactions().into_stream().take(10);
 
     let pools = get_pools();
 
@@ -38,6 +36,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     while let Some(tx) = mempool_stream.next().await {
         {
+            let tx = tx?;
+            
             let mut evm = new_evm(fork_db.clone(), block.clone().unwrap());
 
             evm.tx_mut().caller = tx.from.0.into();

@@ -17,6 +17,6 @@
 
 - **simulate_call.rs**: Simulates interactions with the WETH contract.
 
-- **simulate_swap.rs**: Demonstrates a token swap on a Uniswap pool, interacting with a custom Solidity contract, and withdrawing ERC20 tokens to the caller's account.
+- **simulate_swap.rs**: Demonstrates a token swap on a Uniswap pool, interacting with a custom Solidity contract.
 
 - **simple_trace.rs**: An example of how you may trace pending transactions.

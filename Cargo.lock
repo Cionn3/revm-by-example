@@ -2287,6 +2287,7 @@ dependencies = [
  "ethabi",
  "eyre",
  "futures",
+ "futures-util",
  "hashbrown",
  "lazy_static",
  "revm",
