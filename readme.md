@@ -2,6 +2,8 @@
 
 ## Practical examples of the Rust Ethereum Virtual Machine ([REVM](https://github.com/bluealloy/revm))
 
+**For usage with [alloy](https://github.com/alloy-rs/alloy) see branch [feat-alloy](https://github.com/Cionn3/revm-by-example/tree/feat-alloy)**
+
 ## Getting Started
 
 **Clone the Repository:**
