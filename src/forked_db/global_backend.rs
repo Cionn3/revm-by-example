@@ -279,7 +279,7 @@ impl Future for GlobalBackend {
                             let acc = AccountInfo {
                                 nonce,
                                 balance,
-                                code: code.map(|bytes| Bytecode::new_raw(bytes).to_checked()),
+                                code: code.map(|bytes| Bytecode::new_raw(bytes)),
                                 code_hash,
                             };
                             pin.db.insert_account_info(addr, acc.clone());

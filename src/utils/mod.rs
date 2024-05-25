@@ -247,5 +247,5 @@ pub fn to_readable(amount: U256, token: ERC20Token) -> String {
     let divisor = BigDecimal::from_str(&divisor_str).unwrap();
     let amount_as_decimal = BigDecimal::from_str(&amount.to_string()).unwrap();
     let amount = amount_as_decimal / divisor;
-    format!("{:.4} {}", amount, token.name)
+    format!("{:.4} {}", amount, token.symbol)
 }
