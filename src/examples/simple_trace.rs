@@ -11,7 +11,7 @@ use revm_by_example::{
 };
 
 use revm::db::{ CacheDB, EmptyDB };
-use revm::primitives::{ Bytes as rBytes, TransactTo };
+use revm::primitives::{ Bytes, TransactTo };
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -22,7 +22,8 @@ async fn main() -> Result<(), anyhow::Error> {
     let block = client.get_block(block_id, true).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
 
-    let mut mempool_stream = client.subscribe_full_pending_transactions().into_stream().take(10);
+    let sub = client.subscribe_full_pending_transactions().await?;
+    let mut stream = sub.into_stream();
 
     let pools = get_pools();
 
@@ -34,24 +35,24 @@ async fn main() -> Result<(), anyhow::Error> {
     );
     let fork_db = fork_factory.new_sandbox_fork();
 
-    while let Some(tx) = mempool_stream.next().await {
+    while let Some(tx) = stream.next().await {
         {
-            let tx = tx?;
+            
             
             let mut evm = new_evm(fork_db.clone(), block.clone().unwrap());
 
             evm.tx_mut().caller = tx.from.0.into();
             evm.tx_mut().transact_to = TransactTo::Call(tx.to.unwrap_or_default().0.into());
-            evm.tx_mut().data = rBytes::from(tx.input.0);
-            evm.tx_mut().value = to_revm_u256(tx.value);
+            evm.tx_mut().data = Bytes::from(tx.input.0);
+            evm.tx_mut().value = tx.value;
 
             let res = evm.transact()?;
             let touched_accs = res.state.keys();
             let touched_pools: Vec<Address> = touched_accs
                 .clone()
                 .into_iter()
-                .filter(|acc| pools.contains(&to_ethers_address(**acc)))
-                .map(|acc| to_ethers_address(*acc))
+                .filter(|acc| pools.contains(acc))
+                .map(|acc| *acc)
                 .collect();
            
             if !touched_pools.is_empty() {

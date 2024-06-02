@@ -2,10 +2,10 @@
 // https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/fork/backend.rs
 
 use alloy::rpc::types::eth::BlockId;
-use alloy::providers::{RootProvider, Provider};
+use alloy::providers::{ RootProvider, Provider };
 
 use alloy::pubsub::PubSubFrontend;
-use alloy::transports::{RpcError, TransportErrorKind};
+use alloy::transports::{ RpcError, TransportErrorKind };
 use alloy::primitives::{ Address, U256, Bytes };
 
 use eyre::Result;
@@ -26,9 +26,7 @@ type BlockHashSender = OneshotSender<DatabaseResult<B256>>;
 type BasicFuture<Err> = Pin<
     Box<dyn Future<Output = (Result<(U256, u64, Bytes), Err>, Address)> + Send>
 >;
-type StorageFuture<Err> = Pin<
-    Box<dyn Future<Output = (Result<U256, Err>, Address, U256)> + Send>
->;
+type StorageFuture<Err> = Pin<Box<dyn Future<Output = (Result<U256, Err>, Address, U256)> + Send>>;
 type BlockHashFuture<Err> = Pin<Box<dyn Future<Output = (Result<B256, Err>, U256)> + Send>>;
 
 /// Request variants that are executed by the provider
@@ -138,13 +136,17 @@ impl GlobalBackend {
                 let provider = self.provider.clone();
                 let block_num = self.block_num.unwrap();
                 let fut = Box::pin(async move {
+                    // ! temporary fix
+                    let balance = provider
+                        .get_balance(address).await
+                        .expect("Failed to get balance");
+                    let nonce = provider
+                        .get_transaction_count(address).await
+                        .expect("Failed to get nonce");
+                    let code = provider.get_code_at(address).await.expect("Failed to get code");
+                    // let resp = tokio::try_join!(balance, nonce, code);
+                    let resp = Ok((balance, nonce, code));
 
-                    let balance = provider.get_balance(address, block_num);
-                    let nonce = provider.get_transaction_count(address, block_num);
-                    let code = provider.get_code_at(address, block_num);
-                    let resp = tokio::try_join!(balance, nonce, code);
-
-                   
                     (resp, address)
                 });
                 self.pending_requests.push(FetchRequestFuture::Basic(fut));
@@ -163,13 +165,7 @@ impl GlobalBackend {
                 let provider = self.provider.clone();
                 let block_num = self.block_num;
                 let fut = Box::pin(async move {
-
-                    let storage = provider.get_storage_at(
-                        address,
-                        idx,
-                        block_num.unwrap()
-                    ).await;
-
+                    let storage = provider.get_storage_at(address, idx).await;
 
                     (storage, address, idx)
                 });
