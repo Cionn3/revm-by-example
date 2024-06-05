@@ -55,7 +55,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Approve the contract to spend 1 WETH
     let call_data = weth.encode_approve(dummy_contract.address, one_eth);
 
-    let mut evm_params = EvmParams {
+    let mut evm_params = EvmEnv {
         caller: dummy_account.address,
         transact_to: weth.address,
         call_data: call_data.into(),
@@ -74,7 +74,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
     evm_params.set_transact_to(dummy_contract.address);
     evm_params.set_call_data(call_data.into());
-    evm_params.set_tx_env();
 
     let res = evm_params.evm.transact_commit()?;
     let output = res.output().unwrap_or_default();

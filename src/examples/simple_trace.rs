@@ -1,9 +1,8 @@
 use alloy::rpc::types::eth::{BlockId, BlockNumberOrTag};
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 use alloy::providers::Provider;
-use futures::FutureExt;
 use std::str::FromStr;
-use futures_util::{stream, StreamExt};
+use futures_util::StreamExt;
 
 use revm_by_example::{
     forked_db::fork_factory::ForkFactory,

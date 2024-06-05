@@ -44,7 +44,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // ** Get the WETH balance of the dummy account
 
 
-    let mut evm_params = EvmParams {
+    let mut evm_params = EvmEnv {
         caller: dummy_account.address.clone(),
         transact_to: *WETH,
         call_data: weth.encode_balance_of(dummy_account.address).into(),
@@ -71,7 +71,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
     evm_params.set_value(one_eth);
     evm_params.set_call_data(weth.encode_deposit().into());
-    evm_params.set_tx_env();
 
     // simulate the call, transact_commit will apply the state changes
     let res = evm_params.evm.transact_commit()?;
@@ -83,7 +82,6 @@ async fn main() -> Result<(), anyhow::Error> {
     // ** get the weth balance again
     evm_params.set_value(U256::ZERO);
     evm_params.set_call_data(weth.encode_balance_of(dummy_account.address).into());
-    evm_params.set_tx_env();
 
     let res = evm_params.evm.transact()?;
     let output = res.result.output().unwrap_or_default();
@@ -99,7 +97,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // get the weth balance again
     evm_params.set_evm(evm);
-    evm_params.set_tx_env();
     
     let res = evm_params.evm.transact()?;
     let output = res.result.output().unwrap_or_default();
