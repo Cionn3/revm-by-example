@@ -2,8 +2,6 @@
 
 ## Practical examples of the Rust Ethereum Virtual Machine ([REVM](https://github.com/bluealloy/revm))
 
-**For usage with [alloy](https://github.com/alloy-rs/alloy) see branch [feat-alloy](https://github.com/Cionn3/revm-by-example/tree/feat-alloy)**
-
 ## Getting Started
 
 **Clone the Repository:**
@@ -13,12 +11,15 @@
 ## Usage
 
 **To run an example, cargo run by the module name:**
-`cargo run --bin simulate-call`
+`cargo run --bin transfer`
 
 ### Available Examples
 
-- **simulate_call.rs**: Simulates interactions with the WETH contract.
 
-- **simulate_swap.rs**: Demonstrates a token swap on a Uniswap pool, interacting with a custom Solidity contract, and withdrawing ERC20 tokens to the caller's account.
+- **simulate_swap.rs**: Demonstrates a token swap on a Uniswap pool, interacting with a custom Solidity contract.
 
 - **simple_trace.rs**: An example of how you may trace pending transactions.
+
+- **transfer.rs**: Transfer ETH and ERC20 tokens.
+
+- **revert_msg.rs**: Convert EVM output to a readable message.

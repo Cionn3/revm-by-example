@@ -1,28 +1,28 @@
-use ethers::prelude::*;
+use alloy::rpc::types::eth::{BlockId, BlockNumberOrTag};
+use alloy::primitives::Address;
+use alloy::providers::Provider;
 use std::str::FromStr;
+use futures_util::StreamExt;
 
 use revm_by_example::{
-    forked_db::{ fork_factory::ForkFactory, to_revm_u256, to_ethers_address },
+    forked_db::fork_factory::ForkFactory,
     *,
 };
 
 use revm::db::{ CacheDB, EmptyDB };
-use revm::primitives::{ Bytes as rBytes, TransactTo };
+use revm::primitives::{ Bytes, TransactTo };
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let client = get_client().await?;
 
     let latest_block = client.get_block_number().await?;
-    let block = client.get_block(latest_block).await?;
+    let block_id = BlockId::Number(BlockNumberOrTag::Number(latest_block));
+    let block = client.get_block(block_id, true.into()).await?;
     let cache_db = CacheDB::new(EmptyDB::default());
-    let block_id = BlockId::Number(BlockNumber::Number(latest_block));
 
-    let mut mempool_stream = if let Ok(stream) = client.subscribe_full_pending_txs().await {
-        stream
-    } else {
-        return Err(anyhow::anyhow!("Failed to subscribe to pending transactions"));
-    };
+    let sub = client.subscribe_full_pending_transactions().await?;
+    let mut stream = sub.into_stream();
 
     let pools = get_pools();
 
@@ -34,22 +34,24 @@ async fn main() -> Result<(), anyhow::Error> {
     );
     let fork_db = fork_factory.new_sandbox_fork();
 
-    while let Some(tx) = mempool_stream.next().await {
+    while let Some(tx) = stream.next().await {
         {
+            
+            
             let mut evm = new_evm(fork_db.clone(), block.clone().unwrap());
 
             evm.tx_mut().caller = tx.from.0.into();
             evm.tx_mut().transact_to = TransactTo::Call(tx.to.unwrap_or_default().0.into());
-            evm.tx_mut().data = rBytes::from(tx.input.0);
-            evm.tx_mut().value = to_revm_u256(tx.value);
+            evm.tx_mut().data = Bytes::from(tx.input.0);
+            evm.tx_mut().value = tx.value;
 
             let res = evm.transact()?;
             let touched_accs = res.state.keys();
             let touched_pools: Vec<Address> = touched_accs
                 .clone()
                 .into_iter()
-                .filter(|acc| pools.contains(&to_ethers_address(**acc)))
-                .map(|acc| to_ethers_address(*acc))
+                .filter(|acc| pools.contains(acc))
+                .map(|acc| *acc)
                 .collect();
            
             if !touched_pools.is_empty() {

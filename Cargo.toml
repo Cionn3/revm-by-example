@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ethers = { version = "2.0.14", features = ["abigen", "ws"] }
+alloy = { version = "0.1", features = ["full"] }
 
-revm = { version = "8.0.0", features = [
+revm = { version = "10.0.0", features = [
     "serde",
     "std",
     "optional_block_gas_limit",
@@ -20,20 +20,20 @@ revm = { version = "8.0.0", features = [
 
 tokio = { version = "1.35.1", features = ["full"] }
 thiserror = "1.0.37"
-sha3 = "0.10.8"
+tiny-keccak = "2.0.2"
 ethabi = "18.0.0"
 anyhow = "1.0.75"
 futures = "0.3.5"
+futures-util = "0.3.30"
 eyre = "0.6.8"
 bigdecimal = "0.4.1"
 hashbrown = "0.14.0"
 lazy_static = "1.4.0"
 serde_json = "1.0.107"
 
-
 [[bin]]
-name = "simulate-call"
-path = "src/examples/simulate_call.rs"
+name = "transfer"
+path = "src/examples/transfer.rs"
 
 [[bin]]
 name = "simulate-swap"
@@ -42,3 +42,7 @@ path = "src/examples/simulate_swap.rs"
 [[bin]]
 name = "simple-trace"
 path = "src/examples/simple_trace.rs"
+
+[[bin]]
+name = "revert-msg"
+path = "src/examples/revert_msg.rs"
