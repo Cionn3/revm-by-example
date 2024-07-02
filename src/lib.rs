@@ -4,6 +4,7 @@ pub mod utils;
 use alloy::{primitives::{ Address, U256 }, providers::{ ProviderBuilder, RootProvider } };
 use alloy::transports::ws::WsConnect;
 use alloy::pubsub::PubSubFrontend;
+use alloy::primitives::keccak256;
 
 use alloy::signers::local::PrivateKeySigner;
 
