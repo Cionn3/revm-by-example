@@ -3,7 +3,7 @@
 
 use alloy::rpc::types::eth::BlockId;
 use alloy::providers::{ RootProvider, Provider };
-
+use alloy::primitives::keccak256;
 use alloy::pubsub::PubSubFrontend;
 use alloy::transports::{ RpcError, TransportErrorKind };
 use alloy::primitives::{ Address, U256, Bytes };
