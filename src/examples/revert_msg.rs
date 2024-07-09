@@ -26,7 +26,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let bob = DummyAccount::new(AccountType::EOA, U256::ZERO, U256::ZERO);
 
-    // insert Bob & Alice to the local fork db
+    // insert Bob
     insert_dummy_account(&bob, &mut fork_factory)?;
 
     let fork_db = fork_factory.new_sandbox_fork();

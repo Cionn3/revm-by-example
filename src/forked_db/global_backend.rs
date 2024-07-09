@@ -16,7 +16,7 @@ use std::future::IntoFuture;
 use std::{ collections::VecDeque, pin::Pin, sync::{ mpsc::Sender as OneshotSender, Arc } };
 
 use super::database_error::{ DatabaseError, DatabaseResult };
-use super::*;
+
 
 // **incoming req and outcoming req handled using revm types
 // all logic internal to this module handled using ethers types (because of provider)
@@ -45,7 +45,7 @@ pub enum BackendFetchRequest {
     /// Fetch a storage slot
     Storage(Address, U256, StorageSender),
     /// Fetch a block hash
-    BlockHash(U256, BlockHashSender),
+    BlockHash(u64, BlockHashSender),
 }
 
 /// Holds db and provdier_db to fallback on so that
@@ -116,11 +116,11 @@ impl GlobalBackend {
                 }
             }
             BackendFetchRequest::BlockHash(number, sender) => {
-                let hash = self.db.block_hashes.get(&number);
+                let hash = self.db.block_hashes.get(&U256::from(number));
                 if let Some(hash) = hash {
                     let _ = sender.send(Ok(hash.0.into()));
                 } else {
-                    self.request_hash(number, sender);
+                    self.request_hash(U256::from(number), sender);
                 }
             }
         }

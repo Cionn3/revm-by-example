@@ -7,7 +7,7 @@ use super::{
     fork_db::ForkDB,
     global_backend::{BackendFetchRequest, GlobalBackend},
 };
-use ethers::prelude::*;
+
 use alloy::rpc::types::eth::BlockId;
 use futures::channel::mpsc::{channel, Sender};
 use revm::{

@@ -14,7 +14,7 @@ use alloy::rpc::types::eth::Block;
 use std::sync::Arc;
 use std::str::FromStr;
 
-use forked_db::{ *, fork_factory::ForkFactory, fork_db::ForkDB };
+use forked_db::{fork_factory::ForkFactory, fork_db::ForkDB };
 
 use revm::primitives::{
     Bytecode,
